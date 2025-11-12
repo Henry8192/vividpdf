@@ -20,12 +20,23 @@ def json_to_transcript(json={"1":"hello world"}, user_preference=None):
 	input:
 	return:
 	objectives:
-		- Intelligent Element Skipping
-		- Context-Aware Semantics
-		- User-Defined Pronunciation
-		- Custom Skipping Rules
-		- Logical Playback Control: figure out how to segment text into sentences
+		JSON to raw paragraph
+		- [nathan] [JSON-wise] Skipping: headers, footers, page numbers, watermarks (checking the bounding box and nearest neighbors)
+		- [henry] [JSON-wise] text formatting: superscript, subscript, bold, italics (check font and fontsize and location)
+		- [x] [JSON-wise] removing empty element 
+		- [ ] [JSON-wise] Logical Playback Control: how to segement into paragraphs (using distance between bounding boxes) 
+		
+		?
+		- [ ] [JSON-wise] code (see if font is monospace (and ask AI) ) 
+		- [ ] [JSON-wise] Logical Playback Control: cross-page paragraph ()
 
+	 	raw paragraph to clean transcript
+		- [ ] [Within-element] Logical Playback Control: figure out how to segment text into sentences
+		- [ ] [Within-element] Skipping: references, URLs, 
+		- [ ] [Within-element] Context-Aware Semantics: abbreviation, pronounciation
+		- [ ] [Within-element] pronounciation of multilingual sentences
+		- [ ] User-Defined Pronunciation
+		- [ ] Custom Skipping Rules
 
 	=======================
 	processing:
@@ -59,7 +70,9 @@ def UI(whatever):
 	"""
 	pass
 
-
+class user_preference:
+	pause_time_between_sentences: float 
+	pause_time_between_paragraphs: float 
 """
 0. define samele text that VIVID need to read correct. (basic tests, challenging tests, bonus tests)
 1. select PDF_get_text_content: research 4 options
