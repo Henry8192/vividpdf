@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PDF Reader with pdf.js + TTS + Hover/Click</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 0;
+      padding: 1rem;
+      background: #f4f4f4;
+    }
+
+    .app {
+      max-width: 900px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 8px;
+      padding: 1rem 1.5rem 1.5rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    h1 {
+      margin-top: 0;
+      font-size: 1.5rem;
+    }
+
+    #controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+
+    #controls button {
+      padding: 0.4rem 0.9rem;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      background: #f0f0f0;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+
+    #controls button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    #page-info {
+      margin-left: auto;
+      font-size: 0.9rem;
+    }
+
+    /* Container for canvas + text overlay */
+    #pdf-container {
+      position: relative;
+      display: inline-block;
+      max-width: 100%;
+    }
+
+    #pdf-canvas {
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      width: 100%;
+      background: #fafafa;
+      display: block;
+    }
+
+    /* Text layer overlay – same size and position as the canvas */
+    #text-layer {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none; /* we'll enable it on the spans themselves */
+      overflow: hidden;
+    }
+
+    .text-span {
+      position: absolute;
+      white-space: pre;
+      pointer-events: auto; /* allow hover/click on spans */
+      cursor: pointer;
+      /* text itself can be transparent so only highlight shows, or keep it visible */
+      color: transparent;          /* invisible text */
+      /* color: black; */          /* uncomment if you want to see the text too */
+    }
+
+    .text-span.highlight-hover {
+      background: rgba(255, 255, 0, 0.4); /* yellow highlight on hover */
+    }
+
+    #status {
+      margin-top: 0.5rem;
+      font-size: 0.9rem;
+      color: #555;
+    }
+
+    #file-input {
+      margin-bottom: 0.75rem;
+    }
+  </style>
+
+  <!-- pdf.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <h1>PDF Viewer + Text-to-Speech (click & hover)</h1>
+
+    <input id="file-input" type="file" accept="application/pdf" />
+
+    <div id="controls">
+      <button id="prev-page" disabled>◀ Prev page</button>
+      <button id="next-page" disabled>Next page ▶</button>
+
+      <button id="read-page" disabled>🔊 Read current page</button>
+      <button id="pause-tts" disabled>⏸ Pause</button>
+      <button id="resume-tts" disabled>▶ Resume</button>
+      <button id="stop-tts" disabled>⏹ Stop</button>
+
+      <span id="page-info">No PDF loaded</span>
+    </div>
+
+    <!-- Canvas + text layer overlay -->
+    <div id="pdf-container">
+      <canvas id="pdf-canvas"></canvas>
+      <div id="text-layer"></div>
+    </div>
+
+    <div id="status">Choose a PDF file to begin.</div>
+  </div>
+
+  <script>
+    // -------------------------
+    // pdf.js basic setup
+    // -------------------------
+    const pdfjsLib = window['pdfjsLib'];
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    const fileInput   = document.getElementById('file-input');
+    const canvas      = document.getElementById('pdf-canvas');
+    const ctx         = canvas.getContext('2d');
+    const prevBtn     = document.getElementById('prev-page');
+    const nextBtn     = document.getElementById('next-page');
+    const readBtn     = document.getElementById('read-page');
+    const pauseBtn    = document.getElementById('pause-tts');
+    const resumeBtn   = document.getElementById('resume-tts');
+    const stopBtn     = document.getElementById('stop-tts');
+    const pageInfo    = document.getElementById('page-info');
+    const statusEl    = document.getElementById('status');
+    const textLayerEl = document.getElementById('text-layer');
+
+    let pdfDoc = null;
+    let currentPage = 1;
+    const scale = 1.3;
+
+    // -------------------------
+    // Browser TTS helpers
+    // -------------------------
+    let currentUtterance = null;
+
+    function supportsTTS() {
+      return 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+    }
+
+    function setStatus(message) {
+      statusEl.textContent = message;
+    }
+
+    function resetTTS() {
+      window.speechSynthesis.cancel();
+      currentUtterance = null;
+      pauseBtn.disabled = true;
+      resumeBtn.disabled = true;
+      stopBtn.disabled = true;
+    }
+
+    function speakText(text) {
+      if (!supportsTTS()) {
+        alert('Your browser does not support Speech Synthesis API.');
+        return;
+      }
+
+      window.speechSynthesis.cancel();
+
+      const utter = new SpeechSynthesisUtterance(text);
+      currentUtterance = utter;
+
+      pauseBtn.disabled = false;
+      stopBtn.disabled = false;
+      resumeBtn.disabled = true;
+
+      utter.onstart = () => setStatus('Reading...');
+      utter.onend = () => {
+        setStatus('Finished reading.');
+        pauseBtn.disabled = true;
+        resumeBtn.disabled = true;
+        stopBtn.disabled = true;
+      };
+      utter.onerror = (e) => {
+        console.error('TTS error', e);
+        setStatus('Error during speech synthesis.');
+        pauseBtn.disabled = true;
+        resumeBtn.disabled = true;
+        stopBtn.disabled = true;
+      };
+
+      window.speechSynthesis.speak(utter);
+    }
+
+    // -------------------------
+    // Extract full text from a PDF page
+    // -------------------------
+    function getPageText(pageNumber) {
+      return pdfDoc.getPage(pageNumber).then((page) => {
+        return page.getTextContent().then((textContent) => {
+          const strings = textContent.items.map((item) => item.str);
+          return strings.join(' ');
+        });
+      });
+    }
+
+    // -------------------------
+    // Render text layer with hover + click
+    // -------------------------
+    function renderTextLayer(page, viewport) {
+      // Clear old text
+      textLayerEl.innerHTML = '';
+
+      return page.getTextContent().then((textContent) => {
+        // For each text item, create a span positioned at its coordinates
+        textContent.items.forEach((item) => {
+          const text = item.str;
+          if (!text.trim()) return;
+
+          const span = document.createElement('span');
+          span.textContent = text;
+          span.className = 'text-span';
+
+          // Get transform matrix for this text item
+          const tx = pdfjsLib.Util.transform(
+            viewport.transform,
+            item.transform
+          );
+
+          // tx is [a, b, c, d, e, f]
+          const x = tx[4];
+          const y = tx[5];
+          const fontHeight = Math.abs(tx[3]);
+
+          // pdf.js uses bottom-left origin, CSS uses top-left
+          const cssTop = viewport.height - y;
+
+          span.style.left = x + 'px';
+          span.style.top = cssTop + 'px';
+          span.style.fontSize = fontHeight + 'px';
+          span.style.height = fontHeight + 'px';
+
+          // Hover highlight
+          span.addEventListener('mouseenter', () => {
+            span.classList.add('highlight-hover');
+          });
+
+          span.addEventListener('mouseleave', () => {
+            span.classList.remove('highlight-hover');
+          });
+
+          // Click to read this piece of text
+          span.addEventListener('click', (event) => {
+            event.stopPropagation(); // don't bubble up
+            resetTTS();
+            speakText(text);
+          });
+
+          textLayerEl.appendChild(span);
+        });
+      });
+    }
+
+    // -------------------------
+    // Render a PDF page
+    // -------------------------
+    function renderPage(num) {
+      pdfDoc.getPage(num).then((page) => {
+        const viewport = page.getViewport({ scale });
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        // Also size the text layer to match the canvas
+        textLayerEl.style.width = canvas.width + 'px';
+        textLayerEl.style.height = canvas.height + 'px';
+
+        const renderContext = {
+          canvasContext: ctx,
+          viewport: viewport
+        };
+
+        setStatus('Rendering page ' + num + '...');
+        // Render canvas
+        page.render(renderContext).promise.then(() => {
+          setStatus('Page ' + num + ' of ' + pdfDoc.numPages);
+        });
+
+        // Render text overlay for interactions
+        renderTextLayer(page, viewport);
+
+        pageInfo.textContent = `Page ${num} / ${pdfDoc.numPages}`;
+
+        prevBtn.disabled = (num <= 1);
+        nextBtn.disabled = (num >= pdfDoc.numPages);
+        readBtn.disabled = false;
+      });
+    }
+
+    // -------------------------
+    // Event: PDF file selected
+    // -------------------------
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(ev) {
+        const typedarray = new Uint8Array(ev.target.result);
+
+        setStatus('Loading PDF...');
+        pdfjsLib.getDocument({ data: typedarray }).promise.then((pdf) => {
+          pdfDoc = pdf;
+          currentPage = 1;
+          setStatus('PDF loaded. Rendering first page...');
+          renderPage(currentPage);
+          readBtn.disabled = false;
+        }).catch((err) => {
+          console.error(err);
+          setStatus('Error loading PDF: ' + err.message);
+        });
+      };
+
+      reader.readAsArrayBuffer(file);
+    });
+
+    // -------------------------
+    // Page navigation
+    // -------------------------
+    prevBtn.addEventListener('click', () => {
+      if (currentPage <= 1) return;
+      currentPage--;
+      resetTTS();
+      renderPage(currentPage);
+    });
+
+    nextBtn.addEventListener('click', () => {
+      if (currentPage >= pdfDoc.numPages) return;
+      currentPage++;
+      resetTTS();
+      renderPage(currentPage);
+    });
+
+    // -------------------------
+    // TTS control events
+    // -------------------------
+    readBtn.addEventListener('click', () => {
+      if (!pdfDoc) return;
+
+      resetTTS();
+      setStatus('Extracting text from page ' + currentPage + '...');
+
+      getPageText(currentPage).then((text) => {
+        if (!text.trim()) {
+          setStatus('No readable text found on this page.');
+          return;
+        }
+        speakText(text);
+      }).catch((err) => {
+        console.error(err);
+        setStatus('Error extracting text.');
+      });
+    });
+
+    pauseBtn.addEventListener('click', () => {
+      if (!supportsTTS()) return;
+      if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+        window.speechSynthesis.pause();
+        setStatus('Paused.');
+        resumeBtn.disabled = false;
+        pauseBtn.disabled = true;
+      }
+    });
+
+    resumeBtn.addEventListener('click', () => {
+      if (!supportsTTS()) return;
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+        setStatus('Resumed.');
+        resumeBtn.disabled = true;
+        pauseBtn.disabled = false;
+      }
+    });
+
+    stopBtn.addEventListener('click', () => {
+      if (!supportsTTS()) return;
+      window.speechSynthesis.cancel();
+      setStatus('Stopped.');
+      pauseBtn.disabled = true;
+      resumeBtn.disabled = true;
+      stopBtn.disabled = true;
+    });
+
+    // -------------------------
+    // Initial TTS support check
+    // -------------------------
+    if (!supportsTTS()) {
+      setStatus('Warning: this browser does not support the Web Speech (TTS) API.');
+    }
+  </script>
+</body>
+</html>
