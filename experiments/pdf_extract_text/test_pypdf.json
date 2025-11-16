@@ -1,0 +1,8 @@
+{
+  "pages": [
+    {
+      "page": 1,
+      "text": " For testing: PDF_get_text_content() \n Challenging for PDF-to-json: \n runtime of O(n  2  ) \n for all e ∈  𝒳  which cannot be negative \n NO  3  pollution \n The speed of light is c = 3 ⋅  10  8  m/s \n Prof. Hamid is awesome [6] and Prof. Wang too [7] \n This is a sentence with 中文  characters. \n This emoji 👍  means good \n This is a  VERY ANGRY  text. \n This is  italics \n This is a  link \n Challenging for pr ocessing / vocalizer \n What is TCACHE in glibc system programming? \n 5th gen. iPad \n Einstein et al. 1951 "
+    }
+  ]
+}
