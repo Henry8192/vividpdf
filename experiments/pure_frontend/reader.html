@@ -2,408 +2,403 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>PDF Reader with pdf.js + Browser TTS / MiniMax TTS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart VIVID TTS</title>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 0; padding: 1rem; background: #f4f4f4; }
-    .app { max-width: 1000px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 1rem 1.5rem 1.5rem; box-shadow: 0 4px 14px rgba(0,0,0,.08); }
-    h1 { margin: .25rem 0 0; font-size: 1.35rem; }
+    :root {
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --bg-body: #f1f5f9;
+      --bg-card: #ffffff;
+      --text-main: #1e293b;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --danger: #ef4444;
+      --radius: 8px;
+    }
 
-    #toolbar { display: grid; grid-template-columns: 1fr; gap: .75rem; margin: .75rem 0; }
-    .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
-    .row label { font-size: .9rem; color: #444; }
+    * { box-sizing: border-box; }
 
-    button { padding: .45rem .9rem; border-radius: 8px; border: 1px solid #ccc; background: #f7f7f7; cursor: pointer; font-size: .9rem; }
-    button:disabled { opacity: .5; cursor: default; }
-    select, input[type="text"], input[type="password"], input[type="number"] { padding: .4rem .55rem; border-radius: 8px; border: 1px solid #ccc; font-size: .9rem; }
-    input[type="range"] { width: 160px; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0; padding: 20px;
+      background: var(--bg-body); color: var(--text-main);
+      line-height: 1.5;
+    }
 
-    #pdf-container { position: relative; display: inline-block; max-width: 100%; }
-    #pdf-canvas { border: 1px solid #ddd; border-radius: 6px; width: 100%; background: #fafafa; display: block; }
+    .app {
+      max-width: 1100px; margin: 0 auto;
+      background: var(--bg-card); border-radius: 12px;
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+      padding: 2rem; display: flex; flex-direction: column; gap: 1.5rem;
+    }
 
-    #text-layer { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; }
-    .text-span { position: absolute; white-space: pre; pointer-events: auto; cursor: pointer; color: transparent; }
-    .text-span.highlight-hover { background: rgba(255,255,0,.4); }
+    header {
+      display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 1px solid var(--border); padding-bottom: 1rem;
+    }
+    
+    h1 { margin: 0; font-size: 1.5rem; font-weight: 700; }
+    #status { font-size: 0.875rem; color: var(--primary); background: #eef2ff; padding: 0.25rem 0.75rem; border-radius: 999px; }
 
-    #page-info { margin-left: auto; font-size: .9rem; }
-    #status { margin-top: .5rem; font-size: .9rem; color: #555; }
-    .divider { height: 1px; background: #eee; margin: .5rem 0; }
+    .toolbar-section { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; padding: 0.5rem 0; }
+    .toolbar-group { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; background: #f8fafc; padding: 0.5rem; border-radius: var(--radius); border: 1px solid var(--border); }
+    
+    button {
+      padding: 0.5rem 1rem; font-size: 0.9rem; font-weight: 500;
+      border-radius: 6px; border: 1px solid var(--border);
+      background: white; cursor: pointer; transition: all 0.2s;
+    }
+    button:hover:not(:disabled) { background: #f1f5f9; border-color: #cbd5e1; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    
+    #read-page { background: var(--primary); color: white; border-color: transparent; }
+    #read-page:hover:not(:disabled) { background: var(--primary-hover); }
+    #stop-tts { color: var(--danger); border-color: #fca5a5; }
+
+    select, input {
+      padding: 0.45rem 0.75rem; border-radius: 6px;
+      border: 1px solid var(--border); font-size: 0.9rem;
+    }
+
+    #minimax-panel {
+      background: #f8fafc; border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1rem;
+      display: none; animation: fadeIn 0.3s ease;
+    }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(-5px); } to { opacity:1; transform:translateY(0); } }
+    
+    .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; align-items: end; }
+    .setting-item { display: flex; flex-direction: column; gap: 0.35rem; }
+
+    #pdf-container {
+      position: relative; margin: 1rem auto 0; display: inline-block;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1);
+      border-radius: 4px; overflow: hidden; line-height: 0;
+    }
+    #pdf-canvas { display: block; background: #fafafa; }
+    
+    /* --- 核心修改：文本层与选择 --- */
+    #text-layer {
+      position: absolute; left: 0; top: 0; right: 0; bottom: 0;
+      overflow: hidden; line-height: 1.0;
+      /* 允许用户选择文本 */
+      user-select: text; 
+      -webkit-user-select: text;
+    }
+
+    .text-span {
+      color: transparent;
+      position: absolute;
+      white-space: pre;
+      cursor: text; /* 鼠标变成 'I' 型，提示可选择 */
+      border-radius: 3px;
+      line-height: 1;
+      transform-origin: 0% 0%;
+      box-sizing: border-box;
+    }
+
+    /* 选中时的样式 (浏览器原生蓝色背景，但我们可以微调) */
+    ::selection {
+      background: rgba(79, 70, 229, 0.3); /* 选中区域变淡紫 */
+    }
+
+    /* 鼠标悬停单个词时依然显示框，方便点读 */
+    .text-span:hover {
+      outline: 1px solid rgba(79, 70, 229, 0.3);
+    }
   </style>
-  <!-- pdf.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
   <div class="app">
-    <h1>PDF Viewer + TTS (Hover/Click segments, Read page)</h1>
+    <header>
+      <h1>VIVID <span style="color:var(--text-muted); font-weight:400;"> TTS</span></h1>
+      <div id="status">Waiting for file...</div>
+    </header>
 
     <div id="toolbar">
-      <div class="row">
-        <input id="file-input" type="file" accept="application/pdf" />
-        <button id="prev-page" disabled>◀ Prev page</button>
-        <button id="next-page" disabled>Next page ▶</button>
-        <button id="read-page" disabled>🔊 Read current page</button>
-        <button id="pause-tts" disabled>⏸ Pause</button>
-        <button id="resume-tts" disabled>▶ Resume</button>
-        <button id="stop-tts" disabled>⏹ Stop</button>
-        <span id="page-info">No PDF loaded</span>
-      </div>
-
-      <div class="divider"></div>
-
-      <div class="row">
-        <label for="tts-engine"><strong>TTS Engine</strong></label>
-        <select id="tts-engine">
-          <option value="browser">Browser (SpeechSynthesis)</option>
-          <option value="minimax">MiniMax (HTTP API)</option>
-        </select>
-        <span id="engine-hint" style="font-size:.85rem;color:#666">Browser: No need for Internet；MiniMax：require API Key，more natural sound</span>
-      </div>
-
-      <div id="minimax-panel" style="display:none">
-        <div class="row">
-          <label for="minimax-key">MiniMax API Key</label>
-          <input id="minimax-key" type="password" placeholder="local test" style="min-width:340px" />
-          <label>Remember pwd</label>
-          <input id="remember-key" type="checkbox" />
+      <div class="toolbar-section">
+        <div class="toolbar-group"><input id="file-input" type="file" accept="application/pdf" /></div>
+        <div class="toolbar-group">
+            <button id="prev-page" disabled>◀</button>
+            <span id="page-info" style="min-width:80px; text-align:center; font-weight:600;">-- / --</span>
+            <button id="next-page" disabled>▶</button>
         </div>
-        <div class="row">
-          <label for="minimax-voice">Voice</label>
-          <select id="minimax-voice"></select>
-          <input id="minimax-voice-custom" type="text" placeholder="Custom voice_id" style="display:none; min-width:260px" />
-          <label for="minimax-speed">Speed</label>
-          <input id="minimax-speed" type="range" min="0.5" max="2" step="0.1" value="1" />
-          <span id="speed-val" style="min-width:2.5rem">1.0</span>
-          <label for="minimax-sr">Sample Rate</label>
-          <select id="minimax-sr">
-            <option value="32000" selected>32000</option>
-            <option value="24000">24000</option>
-            <option value="16000">16000</option>
-          </select>
-          <label for="minimax-format">Format</label>
-          <select id="minimax-format">
-            <option value="mp3" selected>mp3</option>
-            <option value="wav">wav</option>
-          </select>
+      </div>
+      <div class="toolbar-section">
+        <button id="read-page" disabled>🔊 Read Page</button>
+        <div class="toolbar-group">
+            <button id="pause-tts" disabled>⏸ Pause</button>
+            <button id="resume-tts" disabled>▶ Resume</button>
+            <button id="stop-tts" disabled>⏹ Stop</button>
+        </div>
+      </div>
+      <div style="height:1px; background:var(--border); width:100%;"></div>
+      <div class="toolbar-section">
+        <div class="toolbar-group">
+            <label>TTS Engine:</label>
+            <select id="tts-engine">
+            <option value="browser">Browser (Free)</option>
+            <option value="minimax">MiniMax (High Quality)</option>
+            </select>
+        </div>
+      </div>
+      <div id="minimax-panel">
+        <div class="settings-grid">
+            <div class="setting-item" style="grid-column: span 2;">
+                <label>API Key</label>
+                <input id="minimax-key" type="password" placeholder="Enter MiniMax Key" />
+            </div>
+            <div class="setting-item">
+                <label>Voice</label>
+                <select id="minimax-voice" style="width:100%"></select>
+                <input id="minimax-voice-custom" type="text" placeholder="id" style="display:none; margin-top:5px;" />
+            </div>
+            <div class="setting-item">
+                <label>Speed: <span id="speed-val">1.0</span></label>
+                <input id="minimax-speed" type="range" min="0.5" max="2" step="0.1" value="1" />
+            </div>
         </div>
       </div>
     </div>
 
-    <!-- Canvas + text layer overlay -->
-    <div id="pdf-container">
-      <canvas id="pdf-canvas"></canvas>
-      <div id="text-layer"></div>
+    <div style="text-align: center; background: #e2e8f0; padding: 2rem; border-radius: 8px; overflow: auto;">
+        <div id="pdf-container">
+            <canvas id="pdf-canvas"></canvas>
+            <div id="text-layer"></div>
+        </div>
+        <p style="margin-top:1rem; color:var(--text-muted); font-size:0.9rem;">💡 Tip: <b>Drag mouse</b> to read sentences, or <b>Click</b> to read single words.</p>
     </div>
 
-    <div id="status">Choose a PDF file to begin.</div>
-
-    <!-- Unified audio element for MiniMax playback -->
     <audio id="player" hidden></audio>
   </div>
 
   <script>
-    // ------------------------- pdf.js setup -------------------------
+    // --- PDF.js Setup ---
     const pdfjsLib = window['pdfjsLib'];
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-    const fileInput = document.getElementById('file-input');
-    const canvas = document.getElementById('pdf-canvas');
-    const ctx = canvas.getContext('2d');
-    const prevBtn = document.getElementById('prev-page');
-    const nextBtn = document.getElementById('next-page');
-    const readBtn = document.getElementById('read-page');
-    const pauseBtn = document.getElementById('pause-tts');
-    const resumeBtn = document.getElementById('resume-tts');
-    const stopBtn = document.getElementById('stop-tts');
-    const pageInfo = document.getElementById('page-info');
-    const statusEl = document.getElementById('status');
-    const textLayerEl = document.getElementById('text-layer');
+    // --- UI Elements ---
+    const els = {
+      file: document.getElementById('file-input'),
+      canvas: document.getElementById('pdf-canvas'),
+      textLayer: document.getElementById('text-layer'),
+      status: document.getElementById('status'),
+      pageInfo: document.getElementById('page-info'),
+      audio: document.getElementById('player'),
+      minimaxPanel: document.getElementById('minimax-panel'),
+      engine: document.getElementById('tts-engine'),
+      btns: {
+        prev: document.getElementById('prev-page'),
+        next: document.getElementById('next-page'),
+        read: document.getElementById('read-page'),
+        pause: document.getElementById('pause-tts'),
+        resume: document.getElementById('resume-tts'),
+        stop: document.getElementById('stop-tts')
+      },
+      settings: {
+        key: document.getElementById('minimax-key'),
+        voice: document.getElementById('minimax-voice'),
+        customVoice: document.getElementById('minimax-voice-custom'),
+        speed: document.getElementById('minimax-speed'),
+        speedVal: document.getElementById('speed-val')
+      }
+    };
 
-    const engineSel = document.getElementById('tts-engine');
-    const minimaxPanel = document.getElementById('minimax-panel');
-    const audioEl = document.getElementById('player');
-
-    const keyInput = document.getElementById('minimax-key');
-    const rememberKey = document.getElementById('remember-key');
-    const voiceSel = document.getElementById('minimax-voice');
-    const voiceCustom = document.getElementById('minimax-voice-custom');
-    const speedSlider = document.getElementById('minimax-speed');
-    const speedVal = document.getElementById('speed-val');
-    const srSel = document.getElementById('minimax-sr');
-    const fmtSel = document.getElementById('minimax-format');
-
-    let pdfDoc = null;
-    let currentPage = 1;
-    const scale = 1.3;
-
-    // ------------------------- Browser TTS helpers -------------------------
-    let currentUtterance = null;
-
-    function supportsTTS() {
-      return 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
-    }
-
-    function setStatus(message) { statusEl.textContent = message; }
-
+    const ctx = els.canvas.getContext('2d');
+    let pdfDoc = null, currentPage = 1, scale = 1.5;
+    
+    // --- TTS State ---
+    let isMiniMax = false;
+    
+    // --- Helpers ---
+    function setStatus(msg) { els.status.textContent = msg; }
+    
     function resetTTS() {
-      // Stop browser TTS
-      if (supportsTTS()) {
-        window.speechSynthesis.cancel();
-      }
-      currentUtterance = null;
-      // Stop MiniMax audio
-      audioEl.pause();
-      audioEl.currentTime = 0;
-
-      pauseBtn.disabled = true;
-      resumeBtn.disabled = true;
-      stopBtn.disabled = true;
-    }
-
-    function speakWithBrowserTTS(text) {
-      if (!supportsTTS()) { alert('Your browser does not support Speech Synthesis API.'); return; }
       window.speechSynthesis.cancel();
-      const utter = new SpeechSynthesisUtterance(text);
-      currentUtterance = utter;
-
-      pauseBtn.disabled = false; stopBtn.disabled = false; resumeBtn.disabled = true;
-      utter.onstart = () => setStatus('Reading (Browser TTS)...');
-      utter.onend = () => { setStatus('Finished.'); pauseBtn.disabled = true; resumeBtn.disabled = true; stopBtn.disabled = true; };
-      utter.onerror = (e) => { console.error('TTS error', e); setStatus('Error during speech synthesis.'); pauseBtn.disabled = true; resumeBtn.disabled = true; stopBtn.disabled = true; };
-      window.speechSynthesis.speak(utter);
+      els.audio.pause(); els.audio.currentTime = 0;
+      els.btns.pause.disabled = true; els.btns.resume.disabled = true; els.btns.stop.disabled = true;
     }
 
-    // ------------------------- MiniMax HTTP TTS -------------------------
+    // --- Browser TTS ---
+    function speakBrowser(text) {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      els.btns.pause.disabled = false; els.btns.stop.disabled = false;
+      u.onend = () => { setStatus('Done'); els.btns.pause.disabled = true; els.btns.stop.disabled = true; };
+      window.speechSynthesis.speak(u);
+    }
+
+    // --- MiniMax TTS ---
     const MINI_VOICES = [
-      { id: 'English_expressive_narrator', label: 'English — Expressive Narrator' },
-      { id: 'English_male_calm', label: 'English — Male Calm' },
-      { id: 'English_female_soft', label: 'English — Female Soft' },
-      { id: 'English_male_energetic', label: 'English — Male Energetic' },
-      { id: 'English_Graceful_Lady', label: 'English — Graceful Lady' },
-      { id: 'English_Insightful_Speaker', label: 'English — Insightful Speaker' },
-      { id: 'Chinese (Mandarin)_Lyrical_Voice', label: '中文 — 抒情' },
-      { id: 'Chinese (Mandarin)_HK_Flight_Attendant', label: '中文 — 港式空乘' },
-      { id: 'moss_audio_ce44fc67-7ce3-11f0-8de5-96e35d26fb85', label: '中文 — MOSS 1' },
-      { id: 'moss_audio_aaa1346a-7ce7-11f0-8e61-2e6e3c7ee85d', label: '中文 — MOSS 2' },
-      { id: 'Japanese_Whisper_Belle', label: '日本語 — Whisper Belle' },
-      { id: '__custom__', label: 'Custom…' }
+      {id:'English_expressive_narrator',l:'English — Narrator'}, {id:'English_male_calm',l:'English — Calm'},
+      {id:'Chinese (Mandarin)_Lyrical_Voice',l:'Chinese — Lyrical'}, {id:'__custom__',l:'Custom...'}
     ];
-
-    function populateMiniVoices() {
-      voiceSel.innerHTML = '';
-      MINI_VOICES.forEach(v => {
-        const opt = document.createElement('option');
-        opt.value = v.id; opt.textContent = v.label; voiceSel.appendChild(opt);
-      });
-      voiceSel.value = 'English_expressive_narrator';
-      toggleCustomVoice();
-    }
-
-    function toggleCustomVoice() {
-      const useCustom = voiceSel.value === '__custom__';
-      voiceCustom.style.display = useCustom ? 'inline-block' : 'none';
-      voiceCustom.disabled = !useCustom;
-    }
-
-    function getSelectedVoiceId() {
-      return (voiceSel.value === '__custom__') ? (voiceCustom.value || '').trim() : voiceSel.value;
-    }
-
-    function hexToBytes(hex) {
-      const len = hex.length; const buf = new Uint8Array(len / 2);
-      for (let i = 0; i < len; i += 2) buf[i/2] = parseInt(hex.substr(i, 2), 16);
-      return buf;
-    }
-
-    async function callMinimaxTTS({ apiKey, text, voiceId, speed=1.0, sampleRate=32000, format='mp3', channel=1 }) {
-      const url = 'https://api.minimax.io/v1/t2a_v2';
-      const body = {
-        model: 'speech-2.6-hd',
-        text,
-        stream: false,
-        output_format: 'hex',
-        language_boost: 'auto',
-        voice_setting: { voice_id: voiceId, speed: speed, vol: 1.0, pitch: 0 },
-        audio_setting: { sample_rate: sampleRate, bitrate: 128000, format: format, channel: channel }
-      };
-      const resp = await fetch(url, {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      if (!resp.ok) { throw new Error('HTTP ' + resp.status + ' ' + await resp.text()); }
-      const result = await resp.json();
-      if ((result.base_resp?.status_code ?? -1) !== 0) {
-        throw new Error('API: ' + (result.base_resp?.status_msg || 'unknown error'));
-      }
-      const hex = result.data?.audio; if (!hex) throw new Error('empty audio');
-      const mime = (format === 'wav') ? 'audio/wav' : 'audio/mpeg';
-      return new Blob([hexToBytes(hex)], { type: mime });
-    }
-
-    async function speakWithMiniMax(text) {
-      const apiKey = keyInput.value.trim();
-      const voiceId = getSelectedVoiceId();
-      const speed = parseFloat(speedSlider.value || '1');
-      const sampleRate = parseInt(srSel.value, 10) || 32000;
-      const format = fmtSel.value || 'mp3';
-      if (!apiKey) { alert('Please enter MiniMax API Key'); return; }
-      if (!voiceId) { alert('Please select voice_id'); return; }
-      setStatus('Calling MiniMax TTS…');
-      const started = Date.now();
+    
+    async function speakMiniMax(text) {
+      const key = els.settings.key.value.trim();
+      const voice = els.settings.voice.value === '__custom__' ? els.settings.customVoice.value : els.settings.voice.value;
+      const speed = parseFloat(els.settings.speed.value);
+      
+      if (!key) { alert('API Key missing'); return; }
+      setStatus('Loading Audio...');
+      
       try {
-        const blob = await callMinimaxTTS({ apiKey, text, voiceId, speed, sampleRate, format, channel: 1 });
-        resetTTS();
-        const url = URL.createObjectURL(blob);
-        audioEl.src = url; audioEl.hidden = false;
-        await audioEl.play();
-        setStatus('Playing (MiniMax)… ' + ((Date.now()-started)/1000).toFixed(2) + 's');
-        pauseBtn.disabled = false; stopBtn.disabled = false; resumeBtn.disabled = true;
-      } catch (e) {
-        console.error(e);
-        setStatus('MiniMax TTS fails：' + (e.message || ''));
-      }
-    }
-
-    function speakUnified(text) {
-      if (engineSel.value === 'minimax') {
-        speakWithMiniMax(text);
-      } else {
-        speakWithBrowserTTS(text);
-      }
-    }
-
-    // ------------------------- Text extraction & rendering -------------------------
-    function getPageText(pageNumber) {
-      return pdfDoc.getPage(pageNumber).then((page) => {
-        return page.getTextContent().then((textContent) => {
-          const strings = textContent.items.map((item) => item.str);
-          return strings.join(' ');
+        const res = await fetch('https://api.minimax.io/v1/t2a_v2', {
+          method:'POST', headers:{'Authorization':'Bearer '+key, 'Content-Type':'application/json'},
+          body: JSON.stringify({
+            model:'speech-2.6-hd', text: text, stream:false, output_format:'hex',
+            voice_setting:{voice_id:voice, speed:speed}, audio_setting:{sample_rate:32000, format:'mp3'}
+          })
         });
-      });
+        const data = await res.json();
+        if (data.base_resp?.status_code !== 0) throw new Error(data.base_resp?.status_msg || 'API Error');
+        
+        const buf = new Uint8Array(data.data.audio.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+        const blob = new Blob([buf], {type:'audio/mpeg'});
+        
+        resetTTS();
+        els.audio.src = URL.createObjectURL(blob);
+        els.audio.hidden = false;
+        await els.audio.play();
+        setStatus('Playing...');
+        els.btns.pause.disabled = false; els.btns.stop.disabled = false;
+      } catch(e) {
+        console.error(e); setStatus('Error: ' + e.message);
+      }
     }
 
+    function speak(text) {
+      if (!text) return;
+      console.log("Speaking:", text); // Debug
+      if (els.engine.value === 'minimax') speakMiniMax(text);
+      else speakBrowser(text);
+    }
+
+    // --- Interaction Logic (The Magic) ---
+    
+    // 1. Handle Selection (Drag to read)
+    document.addEventListener('mouseup', () => {
+      const selection = window.getSelection();
+      const selectedText = selection.toString().trim();
+      
+      // If user selected text inside the text layer
+      if (selectedText.length > 0 && els.textLayer.contains(selection.anchorNode)) {
+        resetTTS();
+        speak(selectedText);
+      }
+    });
+
+    // 2. Handle Click (Fallback for single items)
+    // We need to be careful not to trigger this when dragging
+    // We'll rely on the fact that a drag usually results in a selection.
+    function handleSpanClick(e, text) {
+      const selection = window.getSelection();
+      // Only speak single item if NO text is selected
+      if (selection.toString().length === 0) {
+        e.stopPropagation();
+        resetTTS();
+        speak(text);
+      }
+    }
+
+    // --- Rendering ---
     function renderTextLayer(page, viewport) {
-      textLayerEl.innerHTML = '';
-      return page.getTextContent().then((textContent) => {
-        textContent.items.forEach((item) => {
-          const text = item.str; if (!text.trim()) return;
-          const span = document.createElement('span');
-          span.textContent = text; span.className = 'text-span';
+      els.textLayer.innerHTML = '';
+      page.getTextContent().then(content => {
+        content.items.forEach(item => {
+          if (!item.str.trim()) return;
+          const s = document.createElement('span');
+          s.textContent = item.str; // Note: pdf.js sometimes adds extra spaces to end of str
+          s.className = 'text-span';
+          
+          // Coordinate Calculation (Fixed)
           const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
-          const x = tx[4], y = tx[5], fontHeight = Math.abs(tx[3]);
-          const cssTop = viewport.height - y;
-          span.style.left = x + 'px';
-          span.style.top = cssTop + 'px';
-          span.style.fontSize = fontHeight + 'px';
-          span.style.height = fontHeight + 'px';
-          span.addEventListener('mouseenter', () => span.classList.add('highlight-hover'));
-          span.addEventListener('mouseleave', () => span.classList.remove('highlight-hover'));
-          span.addEventListener('click', (ev) => { ev.stopPropagation(); resetTTS(); speakUnified(text); });
-          textLayerEl.appendChild(span);
+          const h = Math.hypot(tx[2], tx[3]);
+          
+          s.style.left = tx[4] + 'px';
+          s.style.top = (tx[5] - h * 0.9) + 'px';
+          s.style.fontSize = h + 'px';
+          if (item.width > 0) s.style.width = (item.width * viewport.scale) + 'px';
+          
+          // Bind Click (Single item read)
+          s.addEventListener('mousedown', (ev) => ev.stopPropagation()); // Prevent drag start issues sometimes
+          s.addEventListener('click', (ev) => handleSpanClick(ev, item.str));
+          
+          els.textLayer.appendChild(s);
         });
       });
     }
 
     function renderPage(num) {
-      pdfDoc.getPage(num).then((page) => {
+      pdfDoc.getPage(num).then(page => {
         const viewport = page.getViewport({ scale });
-        canvas.height = viewport.height; canvas.width = viewport.width;
-        textLayerEl.style.width = canvas.width + 'px'; textLayerEl.style.height = canvas.height + 'px';
-        const renderContext = { canvasContext: ctx, viewport };
-        setStatus('Rendering page ' + num + '...');
-        page.render(renderContext).promise.then(() => setStatus('Page ' + num + ' of ' + pdfDoc.numPages));
+        els.canvas.height = viewport.height; els.canvas.width = viewport.width;
+        els.textLayer.style.width = viewport.width+'px'; els.textLayer.style.height = viewport.height+'px';
+        
+        page.render({canvasContext:ctx, viewport}).promise.then(() => setStatus('Ready'));
         renderTextLayer(page, viewport);
-        pageInfo.textContent = `Page ${num} / ${pdfDoc.numPages}`;
-        prevBtn.disabled = (num <= 1); nextBtn.disabled = (num >= pdfDoc.numPages); readBtn.disabled = false;
+        
+        els.pageInfo.textContent = `${num} / ${pdfDoc.numPages}`;
+        els.btns.prev.disabled = num<=1; els.btns.next.disabled = num>=pdfDoc.numPages;
+        els.btns.read.disabled = false;
       });
     }
 
-    // ------------------------- Events -------------------------
-    fileInput.addEventListener('change', (e) => {
-      const file = e.target.files[0]; if (!file) return;
-      const reader = new FileReader();
-      reader.onload = function(ev) {
-        const typedarray = new Uint8Array(ev.target.result);
-        setStatus('Loading PDF...');
-        pdfjsLib.getDocument({ data: typedarray }).promise.then((pdf) => {
-          pdfDoc = pdf; currentPage = 1; setStatus('PDF loaded. Rendering first page...');
-          renderPage(currentPage); readBtn.disabled = false;
-        }).catch((err) => { console.error(err); setStatus('Error loading PDF: ' + err.message); });
+    // --- Event Listeners ---
+    els.file.addEventListener('change', e => {
+      const file = e.target.files[0];
+      if(!file) return;
+      const r = new FileReader();
+      r.onload = (ev) => {
+        const data = new Uint8Array(ev.target.result);
+        pdfjsLib.getDocument(data).promise.then(pdf => {
+          pdfDoc = pdf; currentPage = 1; renderPage(1);
+        });
       };
-      reader.readAsArrayBuffer(file);
+      r.readAsArrayBuffer(file);
     });
 
-    prevBtn.addEventListener('click', () => { if (currentPage <= 1) return; currentPage--; resetTTS(); renderPage(currentPage); });
-    nextBtn.addEventListener('click', () => { if (currentPage >= pdfDoc.numPages) return; currentPage++; resetTTS(); renderPage(currentPage); });
-
-    readBtn.addEventListener('click', () => {
-      if (!pdfDoc) return; resetTTS(); setStatus('Extracting text from page ' + currentPage + '...');
-      getPageText(currentPage).then((text) => {
-        if (!text.trim()) { setStatus('No readable text found on this page.'); return; }
-        speakUnified(text);
-      }).catch((err) => { console.error(err); setStatus('Error extracting text.'); });
+    els.btns.prev.addEventListener('click', () => { if(currentPage>1) renderPage(--currentPage); resetTTS(); });
+    els.btns.next.addEventListener('click', () => { if(currentPage<pdfDoc.numPages) renderPage(++currentPage); resetTTS(); });
+    
+    els.btns.read.addEventListener('click', () => {
+       pdfDoc.getPage(currentPage).then(p=>p.getTextContent()).then(c => {
+         const text = c.items.map(i=>i.str).join(' ');
+         resetTTS(); speak(text);
+       });
     });
 
-    pauseBtn.addEventListener('click', () => {
-      if (engineSel.value === 'minimax') {
-        if (!audioEl.paused) { audioEl.pause(); setStatus('Paused (MiniMax).'); resumeBtn.disabled = false; pauseBtn.disabled = true; }
-      } else if (supportsTTS()) {
-        if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
-          window.speechSynthesis.pause(); setStatus('Paused.'); resumeBtn.disabled = false; pauseBtn.disabled = true;
-        }
-      }
+    els.btns.pause.addEventListener('click', () => {
+       if(els.engine.value==='minimax') { els.audio.pause(); setStatus('Paused'); }
+       else window.speechSynthesis.pause();
+       els.btns.pause.disabled=true; els.btns.resume.disabled=false;
+    });
+    
+    els.btns.resume.addEventListener('click', () => {
+       if(els.engine.value==='minimax') { els.audio.play(); setStatus('Playing'); }
+       else window.speechSynthesis.resume();
+       els.btns.pause.disabled=false; els.btns.resume.disabled=true;
     });
 
-    resumeBtn.addEventListener('click', async () => {
-      if (engineSel.value === 'minimax') {
-        await audioEl.play(); setStatus('Resumed (MiniMax).'); resumeBtn.disabled = true; pauseBtn.disabled = false;
-      } else if (supportsTTS()) {
-        if (window.speechSynthesis.paused) { window.speechSynthesis.resume(); setStatus('Resumed.'); resumeBtn.disabled = true; pauseBtn.disabled = false; }
-      }
-    });
+    els.btns.stop.addEventListener('click', resetTTS);
 
-    stopBtn.addEventListener('click', () => {
-      if (engineSel.value === 'minimax') {
-        audioEl.pause(); audioEl.currentTime = 0; setStatus('Stopped.');
-      } else if (supportsTTS()) {
-        window.speechSynthesis.cancel(); setStatus('Stopped.');
-      }
-      pauseBtn.disabled = true; resumeBtn.disabled = true; stopBtn.disabled = true;
+    // MiniMax Logic
+    els.engine.addEventListener('change', () => {
+      els.minimaxPanel.style.display = els.engine.value==='minimax'?'block':'none';
     });
-
-    // Engine toggle & settings
-    engineSel.addEventListener('change', () => {
-      const useMini = engineSel.value === 'minimax';
-      minimaxPanel.style.display = useMini ? 'block' : 'none';
-      if (!useMini) { audioEl.hidden = true; }
-      resetTTS();
+    
+    els.settings.voice.addEventListener('change', () => {
+       els.settings.customVoice.style.display = els.settings.voice.value==='__custom__'?'block':'none';
     });
-
-    voiceSel.addEventListener('change', toggleCustomVoice);
-    speedSlider.addEventListener('input', () => { speedVal.textContent = parseFloat(speedSlider.value).toFixed(1); });
-
-    rememberKey.addEventListener('change', () => {
-      if (rememberKey.checked) {
-        localStorage.setItem('minimax_key', keyInput.value);
-      } else {
-        localStorage.removeItem('minimax_key');
-      }
-    });
-
-    keyInput.addEventListener('input', () => {
-      if (rememberKey.checked) localStorage.setItem('minimax_key', keyInput.value);
-    });
+    
+    els.settings.speed.addEventListener('input', () => els.settings.speedVal.textContent = els.settings.speed.value);
 
     // Init
-    (function init() {
-      populateMiniVoices();
-      // restore key if saved
-      const savedKey = localStorage.getItem('minimax_key');
-      if (savedKey) { keyInput.value = savedKey; rememberKey.checked = true; }
-      if (!supportsTTS()) {
-        setStatus('Warning: this browser does not support the Web Speech (TTS) API. You can switch to MiniMax.');
-      }
-    })();
+    MINI_VOICES.forEach(v => {
+      const o = document.createElement('option'); o.value=v.id; o.textContent=v.l; els.settings.voice.appendChild(o);
+    });
   </script>
 </body>
 </html>
