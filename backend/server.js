@@ -14,7 +14,7 @@ app.post("/upload", upload.single("file"), (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
   const pdfPath = path.resolve(req.file.path);
-  const outputPath = pdfPath + ".out";
+  const outputPath = "./output/";
 
   const p = spawn(path.resolve("venv/bin/mineru"), [
     "-p",
