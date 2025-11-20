@@ -28,8 +28,25 @@ app.post("/upload", upload.single("file"), (req, res) => {
   p.stderr.on("data", d => buffer += d);
 
   p.on("close", code => {
-    res.json({ code, output: buffer });
-    fs.unlink(pdfPath, () => {});
+    const resultPath = path.resolve(
+      outputPath,
+      req.file.filename,
+      "auto",
+      `${req.file.filename}_content_list.json`
+    );
+    fs.readFile(resultPath, "utf8", (err, data) => {
+      if (err) {
+        res.status(500).json({ code, error: "Failed to read mineru output", details: err.message });
+      } else {
+        try {
+          const json = JSON.parse(data);
+          res.json({ code, output: json });
+        } catch (parseErr) {
+          res.status(500).json({ code, error: "Failed to parse JSON output", details: parseErr.message });
+        }
+      }
+      fs.unlink(pdfPath, () => {});
+    });
   });
 });
 
